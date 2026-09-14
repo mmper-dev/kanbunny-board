@@ -19,15 +19,17 @@ what blocks what.
 ## Where things are
 
 ```
-frontend/   the web UI — React 19, TanStack Start (SPA mode), Tailwind 4, shadcn/ui
-backend/    later: Python, managed with uv — does not exist yet
-_docs/      specs.md, the normative specification
+frontend/     the web UI — React 19, TanStack Start (SPA mode), Tailwind 4, shadcn/ui
+backend/      later: Python, managed with uv — does not exist yet
+openapi.yaml  the API contract the backend must implement
+_docs/        specs.md, the normative specification
 ```
 
 **The app runs on mockup data held in memory.** There is no backend and no persistence — edits
 reset when you reload. Every data call goes through `frontend/src/api/`, where an in-memory mock
 implements the same `BoardApi` interface the Python service will implement later, so swapping in a
-real backend is one file. See [`_docs/specs.md`](_docs/specs.md) §5.
+real backend is one file. [`openapi.yaml`](openapi.yaml) specifies exactly what that backend has
+to serve; [`_docs/specs.md`](_docs/specs.md) §5 explains the seam.
 
 ## Running it
 

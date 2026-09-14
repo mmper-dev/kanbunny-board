@@ -307,6 +307,11 @@ Three rules that make the swap free:
 
 ### 5.2 Wire format for the future Python service
 
+> **[`openapi.yaml`](../openapi.yaml) at the repository root is the normative contract** — every
+> endpoint, body, status code and the authentication requirement. It is generated from and kept in
+> step with `BoardApi`. What follows is the summary; where the two disagree, the OpenAPI document
+> wins.
+
 Fix this now so the backend has a target and no mapping layer is ever needed:
 
 - JSON, **camelCase** field names exactly as §4 declares them. On the FastAPI side that means a Pydantic

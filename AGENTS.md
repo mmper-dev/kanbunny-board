@@ -60,6 +60,9 @@ guard for that package.
 
 ## Architecture rules
 
+- **[`openapi.yaml`](openapi.yaml) is the backend contract.** If you change `BoardApi`'s shape or
+  the model in `board-data.ts`, update it in the same commit — it is what the Python service will
+  be built against.
 - **All data access goes through `src/api/`.** `BoardApi` is the contract, `mock-api.ts` the in-memory
   implementation. Every method is `async` and returns the created or updated entity — never assume an id the client
   generated, because the database will own id generation.

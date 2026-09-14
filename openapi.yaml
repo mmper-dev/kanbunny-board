@@ -1,0 +1,609 @@
+openapi: 3.1.0
+
+info:
+  title: Kanbunny Board API
+  version: 0.1.0
+  summary: The backend contract the Kanbunny frontend is built against.
+  description: |
+    This document is the contract between the Kanbunny web UI (`frontend/`) and the Python service
+    that will implement it (`backend/`, managed with uv). It is derived from the `BoardApi`
+    interface in `frontend/src/api/board-api.ts`, which the UI codes against today via an in-memory
+    mock (`mock-api.ts`). Implementing this specification and swapping `mock-api` for an HTTP
+    implementation is the whole migration.
+
+    ## Conventions
+
+    - **camelCase on the wire.** Field names match the TypeScript model exactly (`projectId`,
+      `dependsOn`, `subtasks`). In FastAPI this means Pydantic models with
+      `alias_generator=to_camel` and `populate_by_name=True`, so Python keeps `snake_case`
+      internally while the JSON stays camelCase. A mismatch here fails silently in the browser —
+      TypeScript cannot see it, the field is simply `undefined` at runtime.
+    - **The server owns ids.** `id` is an opaque string; the client never invents one and never
+      parses one. The mock emits `T-10`, `P-3`, `S-6`; a database may emit UUIDs instead and the UI
+      will not care. The only place an id is rendered verbatim is the card header and graph node.
+    - **Mutations return the affected entity.** Create and update return the full object, so the
+      client never merges partial results. Subtask mutations return the **parent task**.
+    - **Subtasks are not addressable on their own.** They are always reached through their task.
+
+    ## Authentication
+
+    Every endpoint under `/api` requires a bearer token. `/health` does not.
+
+    > **The frontend does not send an `Authorization` header yet.** The UI has no login, no token
+    > storage and no session concept — this section describes the required end state, not current
+    > behaviour, and is the one place this document is deliberately ahead of the code. Before the
+    > real backend goes live the frontend needs: a way to obtain a token, storage for it, and an
+    > `Authorization: Bearer <token>` header in `http-api.ts`. Token issuance (login, refresh,
+    > registration) is **not** specified here — it belongs to whatever auth provider is chosen.
+
+    All data is assumed to be scoped to the authenticated principal: `GET /api/tasks` returns that
+    user's tasks, not every task in the database. The API takes no user id parameter anywhere; the
+    token identifies the caller.
+
+    ## Not specified here
+
+    - `reset()` exists on `BoardApi` to restore the demo dataset. It is a property of the mock and
+      should **not** be implemented as a real endpoint.
+    - Pagination. The board loads every task at once, which is correct at board scale. If boards
+      grow past a few hundred tasks this needs revisiting — the dependency graph needs the whole
+      set to lay out, so it is not a simple page-through.
+    - Realtime updates. The UI polls nothing and holds no socket.
+
+servers:
+  - url: http://localhost:8000
+    description: Local FastAPI service. In development Vite proxies /api here, so the browser
+      always calls same-origin paths and no CORS configuration is needed.
+  - url: https://api.kanbunny.example
+    description: Production placeholder.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: tasks
+    description: Task CRUD and their dependency links.
+  - name: subtasks
+    description: Checklist items belonging to a task. Always returned via the parent task.
+  - name: projects
+    description: Groupings of tasks. Deleting one deletes its tasks.
+  - name: meta
+    description: Operational endpoints.
+
+paths:
+  /health:
+    get:
+      tags: [meta]
+      summary: Liveness probe
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: The service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+              example: { status: ok }
+
+  /api/projects:
+    get:
+      tags: [projects]
+      summary: List every project
+      description: Called once on board load, alongside `GET /api/tasks`.
+      operationId: listProjects
+      responses:
+        "200":
+          description: All projects belonging to the caller.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Project" }
+              example:
+                - { id: P-1, name: Carrot Ops, hue: 24 }
+                - { id: P-2, name: Meadow Platform, hue: 142 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+    post:
+      tags: [projects]
+      summary: Create a project
+      description: |
+        `hue` is assigned by the server, not the client — the UI has no colour picker. Spreading
+        hues so adjacent projects stay visually distinct is the server's job; the mock uses
+        `(count * 67 + 24) % 360`.
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectCreate" }
+            example: { name: Warren Infrastructure }
+      responses:
+        "201":
+          description: The created project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+              example: { id: P-3, name: Warren Infrastructure, hue: 158 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+
+    patch:
+      tags: [projects]
+      summary: Update a project
+      description: The UI only ever patches `name`, via inline rename in the project bar.
+      operationId: updateProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectPatch" }
+            example: { name: Carrot Operations }
+      responses:
+        "200":
+          description: The updated project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+    delete:
+      tags: [projects]
+      summary: Delete a project and its tasks
+      description: |
+        **Cascading.** Deleting a project deletes every task in it, and removes those task ids from
+        the `dependsOn` array of every surviving task in other projects. The client re-reads both
+        collections afterwards rather than replicating the cascade, so the response body is empty.
+      operationId: deleteProject
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/tasks:
+    get:
+      tags: [tasks]
+      summary: List every task
+      description: |
+        Returns the whole board, each task with its `subtasks` embedded and its `dependsOn` ids.
+        There is no filtering by project or status — the UI filters client-side, and the dependency
+        graph needs the complete set to compute layers and the critical path.
+      operationId: listTasks
+      responses:
+        "200":
+          description: All tasks belonging to the caller.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+    post:
+      tags: [tasks]
+      summary: Create a task
+      description: |
+        A new task is always created with an empty `subtasks` array — subtasks are added afterwards
+        through their own endpoint. `dependsOn` may be supplied at creation; ids that do not exist
+        are dropped rather than rejected.
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskInput" }
+            example:
+              title: Water the carrots
+              detail: ""
+              status: backlog
+              priority: medium
+              assignee: ""
+              points: 3
+              projectId: P-1
+              dependsOn: []
+      responses:
+        "201":
+          description: The created task.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/tasks/{taskId}:
+    parameters:
+      - $ref: "#/components/parameters/TaskId"
+
+    patch:
+      tags: [tasks]
+      summary: Update a task
+      description: |
+        Every field is optional; send only what changed. Dragging a card between lanes sends
+        `{ "status": "doing" }` and nothing else.
+
+        **Cycle rejection.** If `dependsOn` is present and the resulting graph would contain a
+        cycle, the request is refused with `409` and nothing is written. The client performs the
+        same check before sending, but that is a courtesy — the server must enforce it, because it
+        is the only thing standing between a bad write and a dependency graph that cannot be laid
+        out. A diamond (`A→B`, `A→C`, `B→D`, `C→D`) is **not** a cycle and must be accepted.
+      operationId: updateTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskPatch" }
+            examples:
+              moveLane:
+                summary: Drag to another lane
+                value: { status: doing }
+              editDependencies:
+                summary: Change what it waits on
+                value: { dependsOn: [T-1, T-2] }
+      responses:
+        "200":
+          description: The updated task.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/DependencyConflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+    delete:
+      tags: [tasks]
+      summary: Delete a task
+      description: |
+        **Cascading.** The task's id is removed from the `dependsOn` array of every other task, so
+        no dangling reference survives. Its subtasks go with it. The client re-reads the task list
+        afterwards, so the response body is empty.
+      operationId: deleteTask
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/tasks/{taskId}/subtasks:
+    parameters:
+      - $ref: "#/components/parameters/TaskId"
+
+    post:
+      tags: [subtasks]
+      summary: Add a subtask
+      description: Returns the **parent task**, not the created subtask, so the client can replace
+        the task in place without merging.
+      operationId: createSubtask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubtaskInput" }
+            example: { title: Draft ERD, status: todo, assignee: Mila }
+      responses:
+        "201":
+          description: The parent task, including the new subtask.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/tasks/{taskId}/subtasks/{subtaskId}:
+    parameters:
+      - $ref: "#/components/parameters/TaskId"
+      - $ref: "#/components/parameters/SubtaskId"
+
+    patch:
+      tags: [subtasks]
+      summary: Update a subtask
+      description: |
+        Returns the parent task. The UI patches `status` when the checkbox is toggled, and `title`
+        or `assignee` on every keystroke in the inline fields — expect chatty writes here, or add
+        debouncing client-side.
+      operationId: updateSubtask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubtaskPatch" }
+            example: { status: done }
+      responses:
+        "200":
+          description: The parent task, with the subtask updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+    delete:
+      tags: [subtasks]
+      summary: Delete a subtask
+      description: Returns the parent task rather than `204`, because the client replaces the task
+        in state from the response.
+      operationId: deleteSubtask
+      responses:
+        "200":
+          description: The parent task, without the deleted subtask.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        `Authorization: Bearer <token>`. Token issuance is out of scope for this document. A
+        missing, malformed or expired token is a `401`; a valid token for a principal that may not
+        touch the resource is a `404` rather than a `403`, so the API does not confirm that an id
+        exists to someone who cannot see it.
+
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      description: Opaque task id as returned by the API.
+      schema: { type: string, minLength: 1, maxLength: 64 }
+      example: T-3
+    SubtaskId:
+      name: subtaskId
+      in: path
+      required: true
+      description: Opaque subtask id, unique across the whole board.
+      schema: { type: string, minLength: 1, maxLength: 64 }
+      example: S-4
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: Opaque project id as returned by the API.
+      schema: { type: string, minLength: 1, maxLength: 64 }
+      example: P-1
+
+  responses:
+    Unauthorized:
+      description: Missing, malformed or expired bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { code: unauthorized, message: Sign in to see this board. }
+    NotFound:
+      description: No such entity, or it does not belong to the caller.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { code: not_found, message: No task T-404 }
+    DependencyConflict:
+      description: |
+        The write was refused because it would break the dependency graph, and **nothing was
+        written**. The client shows `message` verbatim in a toast, so it must read as a sentence to
+        a person, not as a stack trace.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            cycle:
+              value:
+                code: dependency_cycle
+                message: That would make a loop — T-3 already waits on T-1.
+                details: { taskId: T-1, conflictsWith: [T-3] }
+            self:
+              value:
+                code: self_dependency
+                message: T-1 cannot wait on itself.
+                details: { taskId: T-1 }
+    ValidationFailed:
+      description: The body did not match the schema.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: validation_error
+            message: points must be zero or greater.
+            details: { field: points }
+
+  schemas:
+    Status:
+      type: string
+      description: |
+        Lane. The labels shown in the UI are product vocabulary and live in the frontend, not here:
+        `backlog` → Burrow, `todo` → Next hop, `doing` → In motion, `done` → Harvested.
+      enum: [backlog, todo, doing, done]
+
+    Priority:
+      type: string
+      enum: [low, medium, high]
+
+    Project:
+      type: object
+      required: [id, name, hue]
+      properties:
+        id:
+          type: string
+          description: Server-assigned, opaque.
+          example: P-1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: Carrot Ops
+        hue:
+          type: integer
+          minimum: 0
+          maximum: 359
+          description: |
+            Server-assigned hue used to tint the project's chip and the left border of its cards.
+            Degrees on the oklch colour wheel; the frontend supplies its own lightness and chroma.
+          example: 24
+
+    ProjectCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+
+    ProjectPatch:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+
+    Subtask:
+      type: object
+      required: [id, title, status, assignee]
+      properties:
+        id:
+          type: string
+          description: Server-assigned. Unique across the whole board, not just within its task.
+          example: S-4
+        title: { type: string, minLength: 1, maxLength: 200, example: Blocker list }
+        status:
+          $ref: "#/components/schemas/Status"
+          description: |
+            Carries all four lanes for symmetry with `Task`, but the UI only ever writes `todo` and
+            `done` — a subtask is a checkbox.
+        assignee:
+          type: string
+          maxLength: 120
+          description: Free text, may be empty. Not a user id; there is no user directory.
+          example: Mila
+
+    SubtaskInput:
+      type: object
+      required: [title, status, assignee]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        status: { $ref: "#/components/schemas/Status" }
+        assignee: { type: string, maxLength: 120 }
+
+    SubtaskPatch:
+      type: object
+      minProperties: 1
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        status: { $ref: "#/components/schemas/Status" }
+        assignee: { type: string, maxLength: 120 }
+
+    Task:
+      type: object
+      required:
+        [id, title, detail, status, priority, assignee, points, projectId, subtasks, dependsOn]
+      properties:
+        id:
+          type: string
+          description: Server-assigned, opaque.
+          example: T-3
+        title: { type: string, minLength: 1, maxLength: 200, example: Plot detail drawer }
+        detail:
+          type: string
+          maxLength: 2000
+          description: Free text notes. May be empty; never null.
+          example: Side panel with owner, notes and blocking relationships.
+        status: { $ref: "#/components/schemas/Status" }
+        priority: { $ref: "#/components/schemas/Priority" }
+        assignee:
+          type: string
+          maxLength: 120
+          description: Free text, may be empty. The UI renders an empty value as "Unassigned".
+          example: Mila
+        points:
+          type: integer
+          minimum: 0
+          description: Estimate. Zero is valid.
+          example: 8
+        projectId:
+          type: string
+          description: Must reference an existing project.
+          example: P-1
+        subtasks:
+          type: array
+          description: Embedded, ordered by insertion. Written only through the subtask endpoints.
+          items: { $ref: "#/components/schemas/Subtask" }
+        dependsOn:
+          type: array
+          description: |
+            Ids of tasks that must finish before this one. The edge points *into* this task: if
+            `T-3.dependsOn` contains `T-1`, then T-1 blocks T-3.
+
+            Must reference existing tasks, must not contain this task's own id, and must never form
+            a cycle. Unfinished entries are what the UI renders as "blocked by" on a card.
+          items: { type: string }
+          example: [T-1, T-2]
+
+    TaskInput:
+      type: object
+      description: Body for creating a task. `id` and `subtasks` are owned by the server.
+      required:
+        [title, detail, status, priority, assignee, points, projectId, dependsOn]
+      properties:
+        title: { type: string, maxLength: 200 }
+        detail: { type: string, maxLength: 2000 }
+        status: { $ref: "#/components/schemas/Status" }
+        priority: { $ref: "#/components/schemas/Priority" }
+        assignee: { type: string, maxLength: 120 }
+        points: { type: integer, minimum: 0 }
+        projectId: { type: string }
+        dependsOn:
+          type: array
+          items: { type: string }
+
+    TaskPatch:
+      type: object
+      description: |
+        Every field optional; only what is sent is changed. `dependsOn` is replaced wholesale, not
+        merged — send the complete list.
+      minProperties: 1
+      properties:
+        title: { type: string, maxLength: 200 }
+        detail: { type: string, maxLength: 2000 }
+        status: { $ref: "#/components/schemas/Status" }
+        priority: { $ref: "#/components/schemas/Priority" }
+        assignee: { type: string, maxLength: 120 }
+        points: { type: integer, minimum: 0 }
+        projectId: { type: string }
+        dependsOn:
+          type: array
+          items: { type: string }
+
+    Error:
+      type: object
+      description: |
+        Every non-2xx response uses this shape. The frontend's `BoardApiError` carries `message`
+        straight into a toast, so `message` is user-facing prose; `code` is what code branches on.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - unauthorized
+            - not_found
+            - validation_error
+            - dependency_cycle
+            - self_dependency
+            - internal_error
+        message:
+          type: string
+          description: A complete sentence, shown to the user as-is.
+        details:
+          type: object
+          additionalProperties: true
+          description: Optional machine-readable context. Shape depends on `code`.
