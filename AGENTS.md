@@ -22,13 +22,17 @@ conflict instead.
 ## Shape of the repo
 
 ```
-frontend/   Node.js / TypeScript / React — the web UI (all current work)
-backend/    later: Python, managed with uv — does not exist yet
+frontend/   Node.js / TypeScript / React — the web UI
+backend/    Python / FastAPI, managed with uv — the API
 _docs/      specs.md
 ```
 
-**The app runs on mockup data held in memory. There is no backend and no persistence — state resets on reload.**
-That is deliberate. The Python service arrives later and plugs into the seam described in spec §5.
+**Both sides run on mockup data held in memory, and neither persists.** The frontend resets on
+reload; the backend resets on restart. That is deliberate for now.
+
+The frontend does **not** call the backend yet — it uses its own mock, because it has no login UI
+to obtain a token. Connecting them means writing `frontend/src/api/http-api.ts` against `BoardApi`
+and adding somewhere to sign in.
 
 ## Framework — do not swap it
 
@@ -104,7 +108,8 @@ The dependency graph **must stay acyclic** (spec §4.3, §8.4).
 
 ## What not to do
 
-- Do not add a backend, an API route, a `fetch` to an application server, or an environment secret.
+- Do not add server routes or server functions to the **frontend** — it is a client-only SPA, and
+  the API belongs in `backend/`.
 - Do not add persistence (localStorage, IndexedDB). Mockup data resetting on reload is intended for now.
 - Do not reintroduce the chat assistant or the AI SDK dependencies.
 - Do not swap the framework, or "simplify" TanStack Start away.

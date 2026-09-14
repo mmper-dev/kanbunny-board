@@ -20,20 +20,22 @@ what blocks what.
 
 ```
 frontend/     the web UI — React 19, TanStack Start (SPA mode), Tailwind 4, shadcn/ui
-backend/      later: Python, managed with uv — does not exist yet
-openapi.yaml  the API contract the backend must implement
+backend/      the API — FastAPI, managed with uv, in-memory store
+openapi.yaml  the contract both sides are built against
 _docs/        specs.md, the normative specification
 ```
 
-**The app runs on mockup data held in memory.** There is no backend and no persistence — edits
-reset when you reload. Every data call goes through `frontend/src/api/`, where an in-memory mock
-implements the same `BoardApi` interface the Python service will implement later, so swapping in a
-real backend is one file. [`openapi.yaml`](openapi.yaml) specifies exactly what that backend has
-to serve; [`_docs/specs.md`](_docs/specs.md) §5 explains the seam.
+**Everything is mockup data held in memory, on both sides.** Nothing persists: the frontend's
+board resets on reload, and the backend's resets on restart.
+
+The frontend still talks to its own in-memory mock by default — it does not call the backend yet,
+because it has no login screen to obtain a token with. Both implement the same contract, so
+connecting them means writing `frontend/src/api/http-api.ts` and pointing `board-store.tsx` at it.
+See [`openapi.yaml`](openapi.yaml) and [`_docs/specs.md`](_docs/specs.md) §5.
 
 ## Running it
 
-Needs [bun](https://bun.sh).
+### Frontend — needs [bun](https://bun.sh)
 
 ```sh
 cd frontend
@@ -55,6 +57,17 @@ bun run lint
 
 Use `bun run test`, not `bun test` — the suite is written for vitest, and `bun test` is bun's own
 runner.
+
+### Backend — needs [uv](https://docs.astral.sh/uv/)
+
+```sh
+cd backend
+uv sync
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+Docs at <http://localhost:8000/docs>, tests with `uv run pytest`. Sign in as **`mila`** /
+**`carrots123`** at `POST /api/auth/login`. See [`backend/README.md`](backend/README.md).
 
 > `bunfig.toml` sets `minimumReleaseAge = 86400`, so bun refuses package versions published in the
 > last 24 hours. If an install fails on a brand-new release, that is why.

@@ -29,12 +29,14 @@ info:
 
     Every endpoint under `/api` requires a bearer token. `/health` does not.
 
+    `POST /api/auth/login` exchanges a username and password for a token. Registration, refresh,
+    password reset and account recovery remain out of scope.
+
     > **The frontend does not send an `Authorization` header yet.** The UI has no login, no token
     > storage and no session concept — this section describes the required end state, not current
     > behaviour, and is the one place this document is deliberately ahead of the code. Before the
     > real backend goes live the frontend needs: a way to obtain a token, storage for it, and an
-    > `Authorization: Bearer <token>` header in `http-api.ts`. Token issuance (login, refresh,
-    > registration) is **not** specified here — it belongs to whatever auth provider is chosen.
+    > `Authorization: Bearer <token>` header in `http-api.ts`.
 
     All data is assumed to be scoped to the authenticated principal: `GET /api/tasks` returns that
     user's tasks, not every task in the database. The API takes no user id parameter anywhere; the
@@ -60,6 +62,8 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: auth
+    description: Obtaining and checking a bearer token.
   - name: tasks
     description: Task CRUD and their dependency links.
   - name: subtasks
@@ -89,6 +93,51 @@ paths:
                     type: string
                     enum: [ok]
               example: { status: ok }
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Exchange a username and password for a bearer token
+      description: |
+        Public. A wrong username and a wrong password return the same body and take the same time,
+        so the response does not reveal which accounts exist.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+            example: { username: mila, password: carrots123 }
+      responses:
+        "200":
+          description: A token for the authenticated user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "401":
+          description: The username and password do not match.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                { code: unauthorized, message: That username and password do not match. }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: Who the current token belongs to
+      description: Lets a client check a stored token is still valid without fetching the board.
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: The authenticated user. Never includes the password hash.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CurrentUser" }
+              example: { id: U-1, username: mila }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/projects:
     get:
@@ -219,6 +268,11 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Task" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: "`projectId` does not name a project the caller owns."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
   /api/tasks/{taskId}:
@@ -351,7 +405,7 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        `Authorization: Bearer <token>`. Token issuance is out of scope for this document. A
+        `Authorization: Bearer <token>`, obtained from `POST /api/auth/login`. A
         missing, malformed or expired token is a `401`; a valid token for a principal that may not
         touch the resource is a `404` rather than a `403`, so the API does not confirm that an id
         exists to someone who cannot see it.
@@ -583,6 +637,38 @@ components:
         dependsOn:
           type: array
           items: { type: string }
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 1, maxLength: 120 }
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+          format: password
+          description: Sent in the clear over TLS, hashed with bcrypt at rest, never logged.
+
+    TokenResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn]
+      properties:
+        accessToken:
+          type: string
+          description: "JWT. Send as `Authorization: Bearer <accessToken>`."
+        tokenType: { type: string, enum: [bearer] }
+        expiresIn:
+          type: integer
+          description: Seconds until the token expires.
+          example: 43200
+
+    CurrentUser:
+      type: object
+      required: [id, username]
+      properties:
+        id: { type: string, example: U-1 }
+        username: { type: string, example: mila }
 
     Error:
       type: object
