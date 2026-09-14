@@ -14,12 +14,13 @@ from .config import settings
 from .errors import install_error_handlers
 from .routers import auth, health, projects, subtasks, tasks
 from .seed import seed_demo_user
+from .store import configure, describe
 
 DESCRIPTION = """
 Backend for the Kanbunny board. Implements the contract in `openapi.yaml`.
 
-**The store is in memory.** Everything — boards, tasks and user accounts alike — is lost on
-restart, and the demo account is recreated at startup.
+Storage is selected by `KANBUNNY_STORE`: `database` (default, `DATABASE_URL`) or `memory`, which
+keeps everything in process for demos and loses it on restart.
 
 Every endpoint under `/api` needs `Authorization: Bearer <token>` except `/api/auth/login`.
 `/health` is public. Get a token from `POST /api/auth/login`.
@@ -28,11 +29,14 @@ Every endpoint under `/api` needs `Authorization: Bearer <token>` except `/api/a
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    user_id = seed_demo_user()
-    print(
-        f"Seeded demo account '{settings.seed_username}' ({user_id}) with 9 tasks "
-        f"across 2 projects."
-    )
+    configure(settings)
+    print(f"Kanbunny storage: {describe()}")
+
+    if settings.seed_demo:
+        # only_if_empty so restarting against a database does not discard the user's work; in
+        # memory mode the board is empty every time anyway, so it always reseeds.
+        user_id = seed_demo_user(only_if_empty=settings.uses_database)
+        print(f"Demo account '{settings.seed_username}' ({user_id}) ready.")
     yield
 
 

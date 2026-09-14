@@ -2,15 +2,16 @@
 
 openapi.yaml originally left this out of scope, on the grounds that it belongs to whatever auth
 provider gets chosen. This service needs *something* to hand out tokens, so it implements the
-smallest thing that works — username and password against an in-memory directory — and the
-contract has been updated to match. Registration, refresh, password reset and account recovery are
+smallest thing that works — a username and password checked against the configured user
+store — and the contract has been updated to match. Registration, refresh, password reset and account recovery are
 still out of scope.
 """
 
 from fastapi import APIRouter, status
 
-from ..auth import CurrentUserDep, issue_token, users
+from ..auth import CurrentUserDep, issue_token
 from ..models import CurrentUser, ErrorBody, LoginRequest, TokenResponse
+from ..store import get_user_store
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -32,7 +33,7 @@ def login(body: LoginRequest) -> TokenResponse:
     A wrong username and a wrong password give the same message and take the same time, so the
     response does not reveal which accounts exist.
     """
-    user = users.authenticate(body.username, body.password)
+    user = get_user_store().authenticate(body.username, body.password)
     token, expires_in = issue_token(user)
     return TokenResponse(access_token=token, token_type="bearer", expires_in=expires_in)
 

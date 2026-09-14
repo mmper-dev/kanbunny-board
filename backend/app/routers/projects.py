@@ -2,7 +2,7 @@ from fastapi import APIRouter, status
 
 from ..auth import CurrentUserDep
 from ..models import ErrorBody, Project, ProjectCreate, ProjectPatch
-from ..store import store
+from ..store import get_board_store
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -21,7 +21,7 @@ ERRORS = {
     responses={401: ERRORS[401]},
 )
 def list_projects(user: CurrentUserDep) -> list[Project]:
-    return store.list_projects(user.id)
+    return get_board_store().list_projects(user.id)
 
 
 @router.post(
@@ -34,7 +34,7 @@ def list_projects(user: CurrentUserDep) -> list[Project]:
 )
 def create_project(body: ProjectCreate, user: CurrentUserDep) -> Project:
     """`hue` is assigned here, not by the client — the UI has no colour picker."""
-    return store.create_project(user.id, body.name)
+    return get_board_store().create_project(user.id, body.name)
 
 
 @router.patch(
@@ -45,7 +45,7 @@ def create_project(body: ProjectCreate, user: CurrentUserDep) -> Project:
     responses=ERRORS,
 )
 def update_project(project_id: str, body: ProjectPatch, user: CurrentUserDep) -> Project:
-    return store.update_project(user.id, project_id, body.changes())
+    return get_board_store().update_project(user.id, project_id, body.changes())
 
 
 @router.delete(
@@ -57,4 +57,4 @@ def update_project(project_id: str, body: ProjectPatch, user: CurrentUserDep) ->
 )
 def delete_project(project_id: str, user: CurrentUserDep) -> None:
     """Cascades: the project's tasks go, and references to them are pruned from survivors."""
-    store.delete_project(user.id, project_id)
+    get_board_store().delete_project(user.id, project_id)

@@ -4,7 +4,8 @@ import bcrypt
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth import hash_password, users, verify_password
+from app.security import hash_password, verify_password
+from app.store import get_user_store
 from tests.conftest import SEED_PASSWORD, SEED_USERNAME
 
 PROTECTED = [
@@ -43,7 +44,7 @@ class TestPasswordHashing:
         assert not verify_password("carrots123", b"not-a-bcrypt-hash")
 
     def test_stored_seed_password_is_hashed(self):
-        user = users.by_username(SEED_USERNAME)
+        user = get_user_store().by_username(SEED_USERNAME)
         assert user is not None
         assert user.password_hash != SEED_PASSWORD.encode()
         assert bcrypt.checkpw(SEED_PASSWORD.encode(), user.password_hash)
@@ -132,7 +133,7 @@ class TestProtectedEndpoints:
         assert "expired" in response.json()["message"].lower()
 
     def test_rejects_a_valid_token_for_a_deleted_account(self, client: TestClient, auth):
-        users.reset()
+        get_user_store().clear()
         response = client.get("/api/tasks", headers=auth)
         assert response.status_code == 401
 
@@ -163,14 +164,14 @@ class TestCurrentUser:
 
 class TestDataIsolation:
     def test_one_user_cannot_see_another_board(self, client: TestClient):
-        users.create("otto", "acorns123")
+        get_user_store().create("otto", "acorns123")
         response = client.post("/api/auth/login", json={"username": "otto", "password": "acorns123"})
         other = {"Authorization": f"Bearer {response.json()['accessToken']}"}
 
         assert client.get("/api/tasks", headers=other).json() == []
 
     def test_one_user_cannot_touch_another_task(self, client: TestClient):
-        users.create("otto", "acorns123")
+        get_user_store().create("otto", "acorns123")
         response = client.post("/api/auth/login", json={"username": "otto", "password": "acorns123"})
         other = {"Authorization": f"Bearer {response.json()['accessToken']}"}
 

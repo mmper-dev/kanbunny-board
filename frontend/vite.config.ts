@@ -16,4 +16,16 @@ export default defineConfig({
     // nothing needs to run on a server at request time. See _docs/specs.md §3.2.
     spa: { enabled: true },
   },
+  vite: {
+    server: {
+      // The browser calls /api on its own origin and Vite forwards it to FastAPI. Because the
+      // page and the request share an origin, CORS never comes into it during development.
+      proxy: {
+        "/api": {
+          target: process.env["VITE_API_PROXY_TARGET"] ?? "http://localhost:8000",
+          changeOrigin: true,
+        },
+      },
+    },
+  },
 });

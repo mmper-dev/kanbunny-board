@@ -6,10 +6,9 @@ it shows against its own mock. If you change one, change the other.
 
 from __future__ import annotations
 
-from .auth import users
 from .config import settings
 from .models import Project, Subtask, Task
-from .store import Board, store
+from .store import get_board_store, get_user_store
 
 
 def _projects() -> list[Project]:
@@ -138,16 +137,26 @@ def _tasks() -> list[Task]:
     ]
 
 
-def demo_board() -> Board:
-    return Board(tasks=_tasks(), projects=_projects())
+def seed_demo_user(
+    username: str | None = None,
+    password: str | None = None,
+    *,
+    only_if_empty: bool = False,
+) -> str:
+    """Create the demo account and give it the demo board. Returns the user id.
 
-
-def seed_demo_user(username: str | None = None, password: str | None = None) -> str:
-    """Create the demo account and give it the demo board. Returns the user id."""
+    With `only_if_empty`, an existing board is left alone — so restarting a service backed by a
+    database does not throw away whatever the user did last time.
+    """
     username = username or settings.seed_username
     password = password or settings.seed_password
 
-    existing = users.by_username(username)
-    user = existing if existing is not None else users.create(username, password)
-    store.load(user.id, demo_board())
+    users = get_user_store()
+    boards = get_board_store()
+
+    user = users.by_username(username) or users.create(username, password)
+    if only_if_empty and not boards.is_empty(user.id):
+        return user.id
+
+    boards.replace_board(user.id, _projects(), _tasks())
     return user.id

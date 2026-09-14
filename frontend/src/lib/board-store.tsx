@@ -20,7 +20,7 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
-import { boardApi } from "@/api/mock-api";
+import { boardApi } from "@/api";
 import type { Project, Status, SubtaskInput, Task, TaskInput } from "@/lib/board-data";
 
 type BoardContextValue = {

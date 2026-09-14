@@ -165,7 +165,5 @@ class MockBoardApi implements BoardApi {
   }
 }
 
+/** src/api/index.ts decides whether this or the HTTP client is the one the app uses. */
 export const createMockBoardApi = (): BoardApi => new MockBoardApi();
-
-/** The implementation the app runs against. Point this at httpBoardApi when the service exists. */
-export const boardApi: BoardApi = createMockBoardApi();

@@ -10,6 +10,8 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
+import { AuthGate } from "@/components/LoginScreen";
+import { AuthProvider, useAuth } from "@/lib/auth-store";
 import { BoardProvider } from "@/lib/board-store";
 
 import appCss from "../styles.css?url";
@@ -122,15 +124,27 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+/** Keyed by token so signing in as someone else remounts the store instead of reusing a board. */
+function Board() {
+  const { token } = useAuth();
+  return (
+    <BoardProvider key={token ?? "demo"}>
+      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+      <Outlet />
+    </BoardProvider>
+  );
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BoardProvider>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
-      </BoardProvider>
+      <AuthProvider>
+        <AuthGate>
+          <Board />
+        </AuthGate>
+      </AuthProvider>
       <Toaster position="top-center" />
     </QueryClientProvider>
   );

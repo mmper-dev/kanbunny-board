@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Keyboard, MoreHorizontal, Plus, RotateCcw, Search, X } from "lucide-react";
+import { Keyboard, LogOut, MoreHorizontal, Plus, RotateCcw, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { BoardColumn } from "@/components/BoardColumn";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -19,6 +19,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { COLUMNS, STATUS_LABEL, type Status, type Task } from "@/lib/board-data";
 import { blockers, dependents, matches, subtaskProgress } from "@/lib/board-queries";
+import { IS_DEMO_MODE } from "@/api";
+import { useAuth } from "@/lib/auth-store";
 import { useBoard } from "@/lib/board-store";
 import { useKeyboardShortcuts, type FocusMove } from "@/hooks/use-keyboard-shortcuts";
 import bunny from "@/assets/kanbunny.png";
@@ -45,6 +47,7 @@ export const Route = createFileRoute("/")({
 
 function Board() {
   const { tasks, projects, loading, deleteTask, moveTask, resetBoard } = useBoard();
+  const { signOut } = useAuth();
 
   const [view, setView] = useState<"board" | "graph">("board");
   const [activeProject, setActiveProject] = useState<string | null>(null);
@@ -347,9 +350,15 @@ function Board() {
               <DropdownMenuItem onSelect={() => setShortcutsOpen(true)}>
                 <Keyboard className="size-3.5" /> Keyboard shortcuts
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setResetOpen(true)}>
-                <RotateCcw className="size-3.5" /> Reset board
-              </DropdownMenuItem>
+              {IS_DEMO_MODE ? (
+                <DropdownMenuItem onSelect={() => setResetOpen(true)}>
+                  <RotateCcw className="size-3.5" /> Reset board
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onSelect={signOut}>
+                  <LogOut className="size-3.5" /> Sign out
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

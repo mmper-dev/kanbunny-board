@@ -2,7 +2,7 @@ from fastapi import APIRouter, status
 
 from ..auth import CurrentUserDep
 from ..models import ErrorBody, Task, TaskInput, TaskPatch
-from ..store import store
+from ..store import get_board_store
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -27,7 +27,7 @@ def list_tasks(user: CurrentUserDep) -> list[Task]:
     No filtering by project or status — the UI filters client-side, and the dependency graph needs
     the complete set to compute its layers and the critical path.
     """
-    return store.list_tasks(user.id)
+    return get_board_store().list_tasks(user.id)
 
 
 @router.post(
@@ -39,7 +39,7 @@ def list_tasks(user: CurrentUserDep) -> list[Task]:
     responses={401: ERRORS[401], 404: ERRORS[404], 422: ERRORS[422]},
 )
 def create_task(body: TaskInput, user: CurrentUserDep) -> Task:
-    return store.create_task(user.id, body.model_dump(by_alias=False))
+    return get_board_store().create_task(user.id, body.model_dump(by_alias=False))
 
 
 @router.patch(
@@ -56,7 +56,7 @@ def update_task(task_id: str, body: TaskPatch, user: CurrentUserDep) -> Task:
     the same check before sending, but this is the enforcement — a diamond is not a loop and is
     accepted.
     """
-    return store.update_task(user.id, task_id, body.changes())
+    return get_board_store().update_task(user.id, task_id, body.changes())
 
 
 @router.delete(
@@ -68,4 +68,4 @@ def update_task(task_id: str, body: TaskPatch, user: CurrentUserDep) -> Task:
 )
 def delete_task(task_id: str, user: CurrentUserDep) -> None:
     """Cascades: the id is pruned from every other task's dependsOn, so nothing dangles."""
-    store.delete_task(user.id, task_id)
+    get_board_store().delete_task(user.id, task_id)

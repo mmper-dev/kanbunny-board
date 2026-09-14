@@ -3,9 +3,29 @@
 FastAPI service implementing [`../openapi.yaml`](../openapi.yaml), the contract the frontend is
 built against.
 
-**The store is in memory.** Boards, tasks and user accounts all live in process and are gone on
-restart; the demo account and its board are recreated at startup. Swapping in a real database means
-replacing `app/store.py` — no router changes.
+## Storage
+
+Two modes, chosen with `KANBUNNY_STORE`:
+
+| | |
+|---|---|
+| `database` (default) | Persists to `DATABASE_URL`. SQLite out of the box. |
+| `memory` | Everything in process, seeded demo data, gone on restart. No database needed. |
+
+`DATABASE_URL` is any SQLAlchemy URL, so PostgreSQL is a driver install and a URL:
+
+```sh
+uv add "psycopg[binary]"
+DATABASE_URL=postgresql+psycopg://user:pass@localhost/kanbunny uv run uvicorn app.main:app
+```
+
+Nothing above `app/store/` knows which is in use — routers depend on the protocols in
+`app/store/base.py`. There is exactly one dialect-specific branch in the codebase, in `db.py`,
+around SQLite connection arguments. No dialect-specific column types, no JSON columns, and
+cascades are done in code rather than relying on `ON DELETE`, which behaves differently per engine.
+
+Tables are created at startup if missing. There are no migrations yet; a schema change means
+deleting the SQLite file, and will mean adding Alembic before this holds data anyone cares about.
 
 ## Running it
 
@@ -44,23 +64,37 @@ boundary.
 
 | Variable | Default | Notes |
 |---|---|---|
+| `KANBUNNY_STORE` | `database` | `database` or `memory`. |
+| `DATABASE_URL` | `sqlite:///./kanbunny.db` | Any SQLAlchemy URL. Ignored in memory mode. |
+| `KANBUNNY_SEED_DEMO` | `true` | Create the demo account at startup. With a database, an existing board is left alone. |
+| `KANBUNNY_ECHO_SQL` | `false` | Log every statement. |
 | `KANBUNNY_SECRET_KEY` | a known dev value | **Set this.** Tokens are signed with it; the default is public, so anyone can mint a valid token. The service warns at startup when it is unset. |
 | `KANBUNNY_TOKEN_TTL_MINUTES` | `720` | Token lifetime. |
 | `KANBUNNY_CORS_ORIGINS` | `localhost:8080,8081,5173` | Comma-separated. Unused if the frontend proxies `/api`. |
 | `KANBUNNY_SEED_USERNAME` | `mila` | Demo account. |
 | `KANBUNNY_SEED_PASSWORD` | `carrots123` | Demo account. |
 
+Settings are read from the environment and from a `.env` file beside `pyproject.toml`; a real
+environment variable always wins. See `.env.example`.
+
 ## Layout
 
 ```
 app/
   main.py       app construction, middleware, router wiring
-  config.py     environment-backed settings
+  config.py     environment-backed settings, including .env
   models.py     wire models — camelCase on the wire, snake_case in Python
-  store.py      in-memory board store: ids, cascades, the acyclic invariant
-  auth.py       users, bcrypt hashing, JWT issue and verify, the route guard
+  db.py         SQLAlchemy engine and tables — the only dialect-aware file
+  security.py   password hashing
+  auth.py       JWT issue and verify, the route guard
   seed.py       demo data, mirroring frontend/src/api/seed.ts
   errors.py     domain errors and the handlers that render the contract's shape
+  store/
+    base.py     the storage protocols routers depend on
+    common.py   ids and the cycle check, shared by both implementations
+    memory.py   in-process store — demo mode
+    sql.py      SQLAlchemy store — SQLite, PostgreSQL, anything with a driver
+    __init__.py picks one from config
   routers/      auth, tasks, subtasks, projects, health
 tests/
 ```
@@ -85,6 +119,10 @@ store, so it holds no matter which route reaches it.
   cannot parse. `message` is written to be shown to a person.
 
 ## Tests
+
+**Every behaviour test runs twice** — once against the in-memory store, once against SQLite — so
+the two implementations cannot drift. `tests/test_persistence.py` covers the one thing that must
+differ: a database survives a restart and the demo store does not.
 
 `tests/test_contract.py` diffs this service's generated OpenAPI against `../openapi.yaml`: paths,
 methods, operation ids, success codes, documented error codes, and which endpoints are public. Add

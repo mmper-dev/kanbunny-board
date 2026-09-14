@@ -8,7 +8,7 @@ from fastapi import APIRouter, status
 
 from ..auth import CurrentUserDep
 from ..models import ErrorBody, SubtaskInput, SubtaskPatch, Task
-from ..store import store
+from ..store import get_board_store
 
 router = APIRouter(prefix="/api/tasks/{task_id}/subtasks", tags=["subtasks"])
 
@@ -28,7 +28,7 @@ ERRORS = {
     responses=ERRORS,
 )
 def create_subtask(task_id: str, body: SubtaskInput, user: CurrentUserDep) -> Task:
-    return store.create_subtask(user.id, task_id, body.model_dump(by_alias=False))
+    return get_board_store().create_subtask(user.id, task_id, body.model_dump(by_alias=False))
 
 
 @router.patch(
@@ -41,7 +41,7 @@ def create_subtask(task_id: str, body: SubtaskInput, user: CurrentUserDep) -> Ta
 def update_subtask(
     task_id: str, subtask_id: str, body: SubtaskPatch, user: CurrentUserDep
 ) -> Task:
-    return store.update_subtask(user.id, task_id, subtask_id, body.changes())
+    return get_board_store().update_subtask(user.id, task_id, subtask_id, body.changes())
 
 
 @router.delete(
@@ -53,4 +53,4 @@ def update_subtask(
 )
 def delete_subtask(task_id: str, subtask_id: str, user: CurrentUserDep) -> Task:
     """Returns the parent task rather than 204 — the client replaces the task from the response."""
-    return store.delete_subtask(user.id, task_id, subtask_id)
+    return get_board_store().delete_subtask(user.id, task_id, subtask_id)

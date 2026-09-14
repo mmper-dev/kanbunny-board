@@ -27,12 +27,16 @@ backend/    Python / FastAPI, managed with uv — the API
 _docs/      specs.md
 ```
 
-**Both sides run on mockup data held in memory, and neither persists.** The frontend resets on
-reload; the backend resets on restart. That is deliberate for now.
+Two modes, and each side switches independently:
 
-The frontend does **not** call the backend yet — it uses its own mock, because it has no login UI
-to obtain a token. Connecting them means writing `frontend/src/api/http-api.ts` against `BoardApi`
-and adding somewhere to sign in.
+- **frontend** `VITE_API_MODE` — `mock` (default; in-browser demo data, no sign-in) or `http`
+  (calls the backend, shows a sign-in screen).
+- **backend** `KANBUNNY_STORE` — `database` (default; SQLAlchemy at `DATABASE_URL`, SQLite out of
+  the box) or `memory` (in-process demo data, wiped on restart).
+
+In development the frontend calls relative `/api/*` paths and Vite proxies them to the backend, so
+nothing is cross-origin and CORS does not apply. Do not replace that with an absolute URL for local
+work.
 
 ## Framework — do not swap it
 
@@ -110,7 +114,10 @@ The dependency graph **must stay acyclic** (spec §4.3, §8.4).
 
 - Do not add server routes or server functions to the **frontend** — it is a client-only SPA, and
   the API belongs in `backend/`.
-- Do not add persistence (localStorage, IndexedDB). Mockup data resetting on reload is intended for now.
+- Do not add persistence to the **frontend** (localStorage, IndexedDB) for board data — that is the
+  backend's job. The auth token in localStorage is the one exception.
+- Do not add a dialect-specific column type, `ON DELETE` cascade, or raw SQL to the backend store.
+  PostgreSQL support must stay a driver install away; `db.py` holds the only SQLite branch.
 - Do not reintroduce the chat assistant or the AI SDK dependencies.
 - Do not swap the framework, or "simplify" TanStack Start away.
 - Do not restyle the app. The look and feel is fixed by `src/styles.css` and spec §6.
