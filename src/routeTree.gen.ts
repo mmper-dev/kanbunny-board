@@ -10,11 +10,19 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as KanbunnyRouteImport } from './routes/kanbunny'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as KanbunnyIndexRouteImport } from './routes/kanbunny.index'
+import { Route as KanbunnyThreadIdRouteImport } from './routes/kanbunny.$threadId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KanbunnyRoute = KanbunnyRouteImport.update({
+  id: '/kanbunny',
+  path: '/kanbunny',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiChatRoute = ApiChatRouteImport.update({
@@ -22,30 +30,56 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KanbunnyIndexRoute = KanbunnyIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => KanbunnyRoute,
+} as any)
+const KanbunnyThreadIdRoute = KanbunnyThreadIdRouteImport.update({
+  id: '/$threadId',
+  path: '/$threadId',
+  getParentRoute: () => KanbunnyRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/kanbunny': typeof KanbunnyRouteWithChildren
   '/api/chat': typeof ApiChatRoute
+  '/kanbunny/$threadId': typeof KanbunnyThreadIdRoute
+  '/kanbunny/': typeof KanbunnyIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/chat': typeof ApiChatRoute
+  '/kanbunny/$threadId': typeof KanbunnyThreadIdRoute
+  '/kanbunny': typeof KanbunnyIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/kanbunny': typeof KanbunnyRouteWithChildren
   '/api/chat': typeof ApiChatRoute
+  '/kanbunny/$threadId': typeof KanbunnyThreadIdRoute
+  '/kanbunny/': typeof KanbunnyIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/chat'
+  fullPaths:
+    '/' | '/kanbunny' | '/api/chat' | '/kanbunny/$threadId' | '/kanbunny/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/chat'
-  id: '__root__' | '/' | '/api/chat'
+  to: '/' | '/api/chat' | '/kanbunny/$threadId' | '/kanbunny'
+  id:
+    | '__root__'
+    | '/'
+    | '/kanbunny'
+    | '/api/chat'
+    | '/kanbunny/$threadId'
+    | '/kanbunny/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  KanbunnyRoute: typeof KanbunnyRouteWithChildren
   ApiChatRoute: typeof ApiChatRoute
 }
 
@@ -58,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/kanbunny': {
+      id: '/kanbunny'
+      path: '/kanbunny'
+      fullPath: '/kanbunny'
+      preLoaderRoute: typeof KanbunnyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/chat': {
       id: '/api/chat'
       path: '/api/chat'
@@ -65,11 +106,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/kanbunny/': {
+      id: '/kanbunny/'
+      path: '/'
+      fullPath: '/kanbunny/'
+      preLoaderRoute: typeof KanbunnyIndexRouteImport
+      parentRoute: typeof KanbunnyRoute
+    }
+    '/kanbunny/$threadId': {
+      id: '/kanbunny/$threadId'
+      path: '/$threadId'
+      fullPath: '/kanbunny/$threadId'
+      preLoaderRoute: typeof KanbunnyThreadIdRouteImport
+      parentRoute: typeof KanbunnyRoute
+    }
   }
 }
 
+interface KanbunnyRouteChildren {
+  KanbunnyThreadIdRoute: typeof KanbunnyThreadIdRoute
+  KanbunnyIndexRoute: typeof KanbunnyIndexRoute
+}
+
+const KanbunnyRouteChildren: KanbunnyRouteChildren = {
+  KanbunnyThreadIdRoute: KanbunnyThreadIdRoute,
+  KanbunnyIndexRoute: KanbunnyIndexRoute,
+}
+
+const KanbunnyRouteWithChildren = KanbunnyRoute._addFileChildren(
+  KanbunnyRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  KanbunnyRoute: KanbunnyRouteWithChildren,
   ApiChatRoute: ApiChatRoute,
 }
 export const routeTree = rootRouteImport
