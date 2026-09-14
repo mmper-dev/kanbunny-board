@@ -1,15 +1,31 @@
 export type Status = "backlog" | "todo" | "doing" | "done";
+export type Priority = "low" | "medium" | "high";
+
+export type Subtask = {
+  id: string;
+  title: string;
+  status: Status;
+  assignee: string;
+};
 
 export type Task = {
   id: string;
   title: string;
   detail: string;
   status: Status;
-  priority: "low" | "medium" | "high";
+  priority: Priority;
   assignee: string;
   points: number;
+  projectId: string;
+  subtasks: Subtask[];
   /** ids of tasks that must finish before this one */
   dependsOn: string[];
+};
+
+export type Project = {
+  id: string;
+  name: string;
+  hue: number;
 };
 
 export const COLUMNS: { id: Status; label: string }[] = [
@@ -17,6 +33,18 @@ export const COLUMNS: { id: Status; label: string }[] = [
   { id: "todo", label: "Next hop" },
   { id: "doing", label: "In motion" },
   { id: "done", label: "Harvested" },
+];
+
+export const STATUS_LABEL: Record<Status, string> = {
+  backlog: "Burrow",
+  todo: "Next hop",
+  doing: "In motion",
+  done: "Harvested",
+};
+
+export const PROJECTS: Project[] = [
+  { id: "P-1", name: "Carrot Ops", hue: 24 },
+  { id: "P-2", name: "Meadow Platform", hue: 142 },
 ];
 
 export const TASKS: Task[] = [
@@ -28,6 +56,11 @@ export const TASKS: Task[] = [
     priority: "high",
     assignee: "Mila",
     points: 5,
+    projectId: "P-1",
+    subtasks: [
+      { id: "S-1", title: "Draft ERD", status: "done", assignee: "Mila" },
+      { id: "S-2", title: "Review with Otto", status: "done", assignee: "Otto" },
+    ],
     dependsOn: [],
   },
   {
@@ -38,6 +71,8 @@ export const TASKS: Task[] = [
     priority: "medium",
     assignee: "Otto",
     points: 3,
+    projectId: "P-1",
+    subtasks: [],
     dependsOn: ["T-1"],
   },
   {
@@ -48,6 +83,11 @@ export const TASKS: Task[] = [
     priority: "high",
     assignee: "Mila",
     points: 8,
+    projectId: "P-1",
+    subtasks: [
+      { id: "S-3", title: "Layout pass", status: "done", assignee: "Mila" },
+      { id: "S-4", title: "Blocker list", status: "doing", assignee: "Mila" },
+    ],
     dependsOn: ["T-1", "T-2"],
   },
   {
@@ -58,6 +98,8 @@ export const TASKS: Task[] = [
     priority: "high",
     assignee: "Ines",
     points: 8,
+    projectId: "P-2",
+    subtasks: [{ id: "S-5", title: "Edge routing", status: "doing", assignee: "Ines" }],
     dependsOn: ["T-2"],
   },
   {
@@ -68,6 +110,8 @@ export const TASKS: Task[] = [
     priority: "medium",
     assignee: "Ines",
     points: 5,
+    projectId: "P-2",
+    subtasks: [],
     dependsOn: ["T-4"],
   },
   {
@@ -78,6 +122,8 @@ export const TASKS: Task[] = [
     priority: "high",
     assignee: "Otto",
     points: 8,
+    projectId: "P-2",
+    subtasks: [],
     dependsOn: ["T-3", "T-4"],
   },
   {
@@ -88,6 +134,8 @@ export const TASKS: Task[] = [
     priority: "low",
     assignee: "Mila",
     points: 3,
+    projectId: "P-1",
+    subtasks: [],
     dependsOn: ["T-6"],
   },
   {
@@ -98,6 +146,8 @@ export const TASKS: Task[] = [
     priority: "low",
     assignee: "Ines",
     points: 2,
+    projectId: "P-2",
+    subtasks: [],
     dependsOn: [],
   },
   {
@@ -108,41 +158,39 @@ export const TASKS: Task[] = [
     priority: "medium",
     assignee: "Otto",
     points: 5,
+    projectId: "P-1",
+    subtasks: [],
     dependsOn: ["T-5", "T-7"],
   },
 ];
 
-export const byId = (id: string) => TASKS.find((t) => t.id === id);
+export const byId = (id: string, tasks: Task[] = TASKS) => tasks.find((t) => t.id === id);
 
-/** tasks blocked by an unfinished dependency */
-export function blockers(task: Task): Task[] {
+/** unfinished dependencies of a task */
+export function blockers(task: Task, tasks: Task[] = TASKS): Task[] {
   return task.dependsOn
-    .map(byId)
+    .map((d) => byId(d, tasks))
     .filter((t): t is Task => Boolean(t) && t!.status !== "done");
 }
 
-export function dependents(id: string): Task[] {
-  return TASKS.filter((t) => t.dependsOn.includes(id));
+export function dependents(id: string, tasks: Task[] = TASKS): Task[] {
+  return tasks.filter((t) => t.dependsOn.includes(id));
 }
 
 /** simple layered layout: depth = longest path from a root */
-export function depthOf(task: Task, seen = new Set<string>()): number {
+export function depthOf(task: Task, tasks: Task[] = TASKS, seen = new Set<string>()): number {
   if (seen.has(task.id)) return 0;
   seen.add(task.id);
   if (task.dependsOn.length === 0) return 0;
-  return (
-    1 +
-    Math.max(
-      ...task.dependsOn.map((d) => {
-        const dep = byId(d);
-        return dep ? depthOf(dep, new Set(seen)) : 0;
-      })
-    )
-  );
+  const depths = task.dependsOn.map((d) => {
+    const dep = byId(d, tasks);
+    return dep ? depthOf(dep, tasks, new Set(seen)) : 0;
+  });
+  return depths.length ? 1 + Math.max(...depths) : 0;
 }
 
-export function boardSummary() {
-  return TASKS.map((t) => ({
+export function boardSummary(tasks: Task[] = TASKS) {
+  return tasks.map((t) => ({
     id: t.id,
     title: t.title,
     detail: t.detail,
@@ -151,7 +199,8 @@ export function boardSummary() {
     assignee: t.assignee,
     points: t.points,
     dependsOn: t.dependsOn,
-    blockedBy: blockers(t).map((b) => b.id),
-    blocks: dependents(t.id).map((b) => b.id),
+    subtasks: t.subtasks.map((s) => `${s.title} (${s.status})`),
+    blockedBy: blockers(t, tasks).map((b) => b.id),
+    blocks: dependents(t.id, tasks).map((b) => b.id),
   }));
 }
