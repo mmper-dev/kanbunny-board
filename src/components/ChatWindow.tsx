@@ -101,7 +101,7 @@ export function ChatWindow({
                   if (part.type === "tool-searchTasks") {
                     return (
                       <Tool key={i} defaultOpen={false}>
-                        <ToolHeader type="Searched the board" state={part.state} />
+                        <ToolHeader type="tool-searchTasks" state={part.state} />
                         <ToolContent>
                           <ToolInput input={part.input} />
                           <ToolOutput output={part.output} errorText={part.errorText} />
