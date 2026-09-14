@@ -1,24 +1,74 @@
 # Kanbunny Board
 
-basic cool kanban app with additional dependency graphs. Also show a bunny agent to search or explain (kanbunny)
+A mini kanban board with dependency graphs — lanes, blocking relationships, and a layered graph of
+what blocks what.
 
-This project was built with [Lovable](https://lovable.dev).
+![The Kanbunny board: four lanes with task cards showing owners, points, subtask progress and blocked-by badges](_docs/board.png)
 
-## Build with Lovable
+## How it was built
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/9a305909-9a47-44fc-bfae-768631f4651e).
+- **The look and feel is [Lovable](https://lovable.dev)'s** — the design system in `src/styles.css`
+  (the oklch palette, Space Grotesk / DM Sans, the lane and card styling), the shadcn/ui component
+  set, and the app's framework: TanStack Start via `@lovable.dev/vite-tanstack-config`. That visual
+  identity is deliberately preserved, not redesigned.
+- **Everything else was built with [Claude Code](https://claude.com/claude-code)** — moving the app
+  into `frontend/`, dropping the server so it runs client-only, the mock data layer, the board
+  interactions (create, edit, delete, drag-and-drop, keyboard shortcuts, search, the dependency
+  graph and critical path), and the tests.
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+## Where things are
 
-## Development
+```
+frontend/   the web UI — React 19, TanStack Start (SPA mode), Tailwind 4, shadcn/ui
+backend/    later: Python, managed with uv — does not exist yet
+_docs/      specs.md, the normative specification
+```
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+**The app runs on mockup data held in memory.** There is no backend and no persistence — edits
+reset when you reload. Every data call goes through `frontend/src/api/`, where an in-memory mock
+implements the same `BoardApi` interface the Python service will implement later, so swapping in a
+real backend is one file. See [`_docs/specs.md`](_docs/specs.md) §5.
+
+## Running it
+
+Needs [bun](https://bun.sh).
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+cd frontend
+bun install
+bun run dev
 ```
+
+Then open **http://localhost:8080** (Vite picks the next free port — 8081, 8082 — if that one is
+already taken; the terminal prints the URL it chose). `Ctrl+C` stops it.
+
+The rest, all from `frontend/`:
+
+```sh
+bun run build     # static build — nothing needs to run on a server
+bun run preview
+bun run test      # vitest: the pure queries and the mock API
+bun run lint
+```
+
+Use `bun run test`, not `bun test` — the suite is written for vitest, and `bun test` is bun's own
+runner.
+
+> `bunfig.toml` sets `minimumReleaseAge = 86400`, so bun refuses package versions published in the
+> last 24 hours. If an install fails on a brand-new release, that is why.
+
+## Using the board
+
+- **Drag** a card between lanes, or use the `⋯` menu on any card — which is also the only way on
+  touch, since HTML5 drag events do not fire there.
+- **Keyboard**: press `?` for the full list.
+  `j` `k` `h` `l` or the arrows move focus, `1`–`4` send the focused card to a lane,
+  `⇧←` `⇧→` nudge it one lane, `n` creates, `e` edits, `/` searches, `b` and `g` switch
+  board and graph.
+- **Graph** view maps the blocking chain; *Critical path* highlights the longest one.
+- Tasks can wait on other tasks. A dependency that would create a **loop** is refused, in the
+  dialog and in the API.
+
+## Lanes
+
+**Burrow** → **Next hop** → **In motion** → **Harvested**
