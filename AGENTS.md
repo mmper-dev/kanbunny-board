@@ -52,7 +52,7 @@ at runtime, no server. So:
 
 ## Commands
 
-Run from `frontend/`. Package manager is **bun**.
+Frontend — run from `frontend/`, package manager is **bun**:
 
 ```bash
 bun install      # bunfig.toml enforces a 24h minimum release age on packages
@@ -61,29 +61,31 @@ bun run build
 bun run preview
 bun run lint
 bun run format
+bun run test     # vitest — use this, not `bun test` (bun's own runner, wrong test suite)
 ```
 
 Ask the user before adding to `minimumReleaseAgeExcludes` in `bunfig.toml` — each entry bypasses the supply-chain
 guard for that package.
 
+Backend — run from `backend/`, package manager is **uv**:
+
+```bash
+uv sync
+uv run uvicorn app.main:app --reload --port 8000
+uv run pytest
+```
+
 ## Architecture rules
 
 - **[`openapi.yaml`](openapi.yaml) is the backend contract.** If you change `BoardApi`'s shape or
-  the model in `board-data.ts`, update it in the same commit — it is what the Python service will
-  be built against.
-- **All data access goes through `src/api/`.** `BoardApi` is the contract, `mock-api.ts` the in-memory
-  implementation. Every method is `async` and returns the created or updated entity — never assume an id the client
-  generated, because the database will own id generation.
+  the model in `board-data.ts`, update it in the same commit — the FastAPI service in `backend/` is
+  built against it.
+- **All data access goes through `src/api/`.** `BoardApi` is the contract; `mock-api.ts` is the in-memory
+  implementation, `http-api.ts` the one that calls the FastAPI backend. Every method is `async` and returns the
+  created or updated entity — never assume an id the client generated, the database owns id generation.
 - **Only `src/api/` and `board-store.tsx` import `seed.ts`. Only `board-store.tsx` mutates state.** Components call
-  store actions. This is the rule the current code breaks (see below).
+  store actions — `routes/index.tsx` and `DependencyGraph.tsx` read from `useBoard()`, not a static array.
 - Selectors in `src/lib/board-queries.ts` are pure and take `tasks` as their first argument.
-
-## Two traps in the existing code
-
-- `board-store.tsx` implements full task / subtask / project CRUD, but **nothing renders it** — `routes/index.tsx`
-  and `DependencyGraph.tsx` import the static `TASKS` array directly, so edits appear to do nothing.
-- Helpers in `board-data.ts` default to `tasks = TASKS`, so calling one without an explicit list silently reads the
-  seed instead of live state.
 
 ## Conventions
 
@@ -107,7 +109,8 @@ The bunny is the **logo**, not a feature. The chat assistant was removed deliber
 ## Data model
 
 `src/lib/board-data.ts`: `Task` (with `subtasks` and `dependsOn`), `Subtask`, `Project`, `Status`, `Priority`. Ids are
-`T-<n>`, `S-<n>`, `P-<n>`. Field names are the wire contract for the future Python service — **do not rename them**.
+`T-<n>`, `S-<n>`, `P-<n>`. Field names are the wire contract with the Python service in `backend/` — **do not rename
+them** without updating `openapi.yaml` and the backend models in the same commit.
 The dependency graph **must stay acyclic** (spec §4.3, §8.4).
 
 ## What not to do
