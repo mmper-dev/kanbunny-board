@@ -31,12 +31,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>(PROJECTS);
 
   const addTask = useCallback((draft: TaskDraft) => {
-    const id = nextId("T", tasksIds(draft));
+    let created = "";
     setTasks((prev) => {
-      const newId = nextId("T", prev.map((t) => t.id));
-      return [...prev, { ...draft, subtasks: draft.subtasks ?? [], id: newId }];
+      const id = nextId("T", prev.map((t) => t.id));
+      created = id;
+      return [...prev, { ...draft, subtasks: draft.subtasks ?? [], id }];
     });
-    return id;
+    return created;
   }, []);
 
   const updateTask = useCallback((id: string, patch: Partial<Omit<Task, "id">>) => {
@@ -145,10 +146,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   return <BoardContext.Provider value={value}>{children}</BoardContext.Provider>;
-}
-
-function tasksIds(_draft: TaskDraft) {
-  return [] as string[];
 }
 
 export function useBoard() {
